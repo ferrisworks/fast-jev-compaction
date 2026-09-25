@@ -252,14 +252,30 @@ export async function compactSession(
  * (fast-jev-compaction#89, anthropics/claude-code#95328). Costs the engine's own
  * bookkeeping for those records (hidden reasoning, images), not their text or tool pairs.
  *
+ * The trailing run of `user`-role messages keeps its handle. That run is the
+ * turn that triggered this compaction (a fresh prompt, or the tool_results of
+ * an agentic loop still in flight): stripping its handle orphans it from the
+ * live turn the engine is mid-way through answering, and the engine has been
+ * observed discarding that in-flight progress and re-deriving the reply from
+ * the compacted history instead of continuing it (fast-jev-compaction#? ,
+ * 2026-09-25 cleo-vps incident). Every earlier, settled message still loses
+ * its handle, so the #89 resume fix is unchanged.
+ *
  * The engine hands over one message per record, and a response with parallel
  * calls is several assistant records sharing a message.id. Fresh records get
  * fresh ids, so adjacent assistant messages are merged back into one; left
  * apart, every call but the last loses its result to the engine's pairing repair.
  */
 export function withoutHandles(messages: readonly SessionMessage[]): SessionMessage[] {
+  let cut = messages.length;
+  while (cut > 0 && messages[cut - 1]!.role === 'user') cut--;
   const out: SessionMessage[] = [];
-  for (const { handle: _handle, ...message } of messages) {
+  for (const [index, kept] of messages.entries()) {
+    if (index >= cut) {
+      out.push(kept);
+      continue;
+    }
+    const { handle: _handle, ...message } = kept;
     const prev = out.at(-1);
     if (prev?.role === 'assistant' && message.role === 'assistant') {
       out[out.length - 1] = {
