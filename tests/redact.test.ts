@@ -171,4 +171,15 @@ describe('withoutHandles', () => {
     expect(out[1]).toEqual({ role: 'assistant', text: 'reading both', toolUses: [use('u1'), use('u2')] });
     expect(out[4]!.text).toBe('done');
   });
+
+  it('keeps the handle on a trailing assistant tool call whose result has not arrived yet', () => {
+    const out = withoutHandles([
+      { role: 'assistant', text: 'settled reply', toolUses: [], handle: 'h0' },
+      { role: 'user', text: 'the message that triggered this compaction', toolUses: [], handle: 'h1' },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: {} }], handle: 'h2' },
+    ] as never);
+    expect('handle' in out[0]!).toBe(false);
+    expect((out[1] as { handle?: string }).handle).toBe('h1');
+    expect((out[2] as { handle?: string }).handle).toBe('h2');
+  });
 });
