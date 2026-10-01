@@ -269,8 +269,11 @@ export async function compactSession(
 export function withoutHandles(messages: readonly SessionMessage[]): SessionMessage[] {
   let cut = messages.length;
   // A compaction can land after the assistant emits a tool call but before its
-  // result arrives: keep that pending assistant message with the in-flight turn.
-  if (cut > 0 && messages[cut - 1]!.role === 'assistant' && messages[cut - 1]!.toolUses.length > 0) cut--;
+  // result arrives: keep that pending assistant message with the in-flight turn,
+  // every record of it, since parallel calls arrive one record each.
+  if (cut > 0 && messages[cut - 1]!.role === 'assistant' && messages[cut - 1]!.toolUses.length > 0) {
+    while (cut > 0 && messages[cut - 1]!.role === 'assistant') cut--;
+  }
   while (cut > 0 && messages[cut - 1]!.role === 'user') cut--;
   const out: SessionMessage[] = [];
   for (const [index, kept] of messages.entries()) {

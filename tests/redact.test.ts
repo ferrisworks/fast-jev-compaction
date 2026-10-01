@@ -182,4 +182,29 @@ describe('withoutHandles', () => {
     expect((out[1] as { handle?: string }).handle).toBe('h1');
     expect((out[2] as { handle?: string }).handle).toBe('h2');
   });
+
+  it('keeps every record of a pending parallel call with the in-flight turn', () => {
+    const use = (id: string) => ({ tool_use_id: id, tool: 'Read', input: {} });
+    const out = withoutHandles([
+      { role: 'assistant', text: 'settled reply', toolUses: [], handle: 'h0' },
+      { role: 'user', text: 'the message that triggered this compaction', toolUses: [], handle: 'h1' },
+      { role: 'assistant', text: '', toolUses: [use('u1')], handle: 'h2' },
+      { role: 'assistant', text: '', toolUses: [use('u2')], handle: 'h3' },
+    ] as never);
+    expect(out.map((m) => (m as { handle?: string }).handle)).toEqual([undefined, 'h1', 'h2', 'h3']);
+  });
+
+  it('merges a settled parallel call whose results are still in flight', () => {
+    const use = (id: string) => ({ tool_use_id: id, tool: 'Read', input: {} });
+    const res = (id: string) => ({ tool_use_id: id, text: 'r', isError: false });
+    const out = withoutHandles([
+      { role: 'user', text: 'go', toolUses: [], handle: 'h0' },
+      { role: 'assistant', text: '', toolUses: [use('u1')], handle: 'h1' },
+      { role: 'assistant', text: '', toolUses: [use('u2')], handle: 'h2' },
+      { role: 'user', text: '', toolUses: [], toolResults: [res('u2')], handle: 'h3' },
+      { role: 'user', text: '', toolUses: [], toolResults: [res('u1')], handle: 'h4' },
+    ] as never);
+    expect(out[1]).toEqual({ role: 'assistant', text: '', toolUses: [use('u1'), use('u2')] });
+    expect(out.slice(2).map((m) => (m as { handle?: string }).handle)).toEqual(['h3', 'h4']);
+  });
 });
