@@ -88,16 +88,19 @@ shrink) logs a fallback and delegates to Claude Code's built-in compaction;
 `turn.complete` one) and `precompute` answer `{ skip }` instead, so the
 conversation stays as it is and Claude Code shows why. `always` delegates on
 every trigger, as the plugin did before the option existed; `never` on none.
-The outcome is shown as a toast and logged with the
-reduction, per-reason counts, state size and request count; a per-call
-`decisions:` line with both probabilities is logged for diagnosis. The
+`minReductionRatio` does not apply to a `/compact` the person typed: that one
+is applied whenever Jev frees anything, and skipped only at 0%. The outcome is
+shown as a toast and logged with the reduction, per-reason counts, state size
+and request count; a compaction that is applied also logs per-call
+`decisions:` lines with both probabilities, for diagnosis. The
 `turn.complete` hook requests
 compaction when `context.percent` reaches `compactAtPercent`, with an
 in-flight guard. When that request is skipped, the hook waits until the
 context has grown by another 10 percentage points, or dropped below
 `compactAtPercent` again, before it asks again. Headless sessions (the
 desktop app's Code tab, `claude -p`) refuse `$.session.compact`, so there the
-hook queues `/compact` for when the turn is over and applies the same wait,
+hook queues `/compact automatic, from fast-jev-compaction` for when the turn
+is over (the text keeps it under `minReductionRatio`) and applies the same wait,
 since a queued compaction's outcome does not come back to it. Toasts are not
 shown in those sessions; the outcome is only in the log.
 

@@ -43,6 +43,13 @@ const HOOK_DEFAULTS = {
  */
 const RETRY_AFTER_SKIP_PERCENT = 10;
 
+/**
+ * The text the compactAtPercent trigger puts after the /compact it queues in a
+ * headless session. That compaction arrives as `manual`; this tells it apart
+ * from a /compact the person typed, so it still has to clear minReductionRatio.
+ */
+export const AUTO_COMPACT_ARGS = 'automatic, from fast-jev-compaction';
+
 export type HookFetchInit = {
   method?: string;
   headers?: Record<string, string>;
@@ -465,10 +472,19 @@ export const register: Register = (on: On, options: PluginOptions) => {
         (ms, options) => $.clock.sleep(ms, options),
       );
       $.ui.log(`redacted ${redacted} secret-shaped value(s) from the Jev request`);
-      for (const line of decisionLogLines(result)) $.ui.log(line);
-      if (reductionRatio(result) < config.minReductionRatio) {
-        return giveUp(`below ${percent(config.minReductionRatio)} minimum: ${summarize(result)}`);
+      // A /compact the person typed takes whatever Jev frees; the automatic ones
+      // (the engine's, ours, our queued /compact) must clear the minimum.
+      const typed = event.trigger === 'manual' && event.instructions !== AUTO_COMPACT_ARGS;
+      const ratio = reductionRatio(result);
+      if (typed ? ratio <= 0 : ratio < config.minReductionRatio) {
+        return giveUp(
+          typed
+            ? `nothing to remove: ${summarize(result)}`
+            : `below ${percent(config.minReductionRatio)} minimum: ${summarize(result)}`,
+        );
       }
+      // Only a compaction that is applied lists its per-call decisions.
+      for (const line of decisionLogLines(result)) $.ui.log(line);
       notify(
         $,
         `kept ${messages.length}/${event.messages.length} messages, no summary (${summarize(result)})`,
@@ -501,7 +517,7 @@ export const register: Register = (on: On, options: PluginOptions) => {
         // Its outcome never comes back here, so wait as after a skip; a compaction
         // that worked brings usage under compactAtPercent, which clears the wait.
         retryAtPercent = used + RETRY_AFTER_SKIP_PERCENT;
-        void $.command.run({ command: 'compact' }).catch((queued: unknown) =>
+        void $.command.run({ command: 'compact', args: AUTO_COMPACT_ARGS }).catch((queued: unknown) =>
           $.ui.log(`auto-compact skipped (${queued instanceof Error ? queued.message : String(queued)})`),
         );
         return next(event);

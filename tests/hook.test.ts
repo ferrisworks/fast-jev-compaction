@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  AUTO_COMPACT_ARGS,
   compactSession,
   decisionLog,
   decisionLogLines,
@@ -487,12 +488,13 @@ async function compactWith(
   trigger: string,
   fetch: ReturnType<typeof jevFetch>,
   options: Record<string, unknown> = {},
+  instructions?: string,
 ) {
   const { $, notices } = host(fetch);
   let delegated = false;
   const out = await hooks({ preserveRecentMessages: 1, ...options })['session.compact']!(
     $,
-    { trigger, messages: transcript() },
+    { trigger, instructions, messages: transcript() },
     async () => {
       delegated = true;
       return CORE;
@@ -527,9 +529,38 @@ describe('built-in summary fallback', () => {
     const { out, delegated, notices } = await compactWith('manual', jevFetch(() => 0.9));
     expect(delegated).toBe(false);
     expect(out).toEqual({
-      skip: expect.stringMatching(/^fast-jev-compaction: below 25% minimum: 0% reduction; .*; conversation left as it is$/),
+      skip: expect.stringMatching(/^fast-jev-compaction: nothing to remove: 0% reduction; .*; conversation left as it is$/),
     });
-    expect(notices.at(-1)).toMatch(/^not compacted, no built-in summary \(below 25% minimum/);
+    expect(notices.at(-1)).toMatch(/^not compacted, no built-in summary \(nothing to remove/);
+  });
+
+  it('applies a /compact the person typed even below the minimum', async () => {
+    const { out, delegated, notices } = await compactWith('manual', jevFetch(() => 0.1), {
+      dropCalls: true,
+      minReductionRatio: 0.99,
+    });
+    expect(delegated).toBe(false);
+    expect((out as { messages: unknown[] }).messages.length).toBeLessThan(transcript().length);
+    expect(notices.at(-1)).toMatch(/^kept \d+\/7 messages, no summary/);
+  });
+
+  it('holds the queued automatic /compact to the minimum', async () => {
+    const { out, delegated } = await compactWith(
+      'manual',
+      jevFetch(() => 0.1),
+      { dropCalls: true, minReductionRatio: 0.99 },
+      AUTO_COMPACT_ARGS,
+    );
+    expect(delegated).toBe(false);
+    expect(out).toEqual({ skip: expect.stringMatching(/below 99% minimum/) });
+  });
+
+  it('lists per-call decisions only for a compaction it applies', async () => {
+    const applied = await compactWith('manual', jevFetch(() => 0.1), { dropCalls: true });
+    expect(applied.notices.some((line) => line.startsWith('decisions'))).toBe(true);
+    const rejected = await compactWith('plugin', jevFetch(() => 0.1), { dropCalls: true, minReductionRatio: 0.99 });
+    expect(rejected.out).toEqual({ skip: expect.stringMatching(/below 99% minimum/) });
+    expect(rejected.notices.some((line) => line.startsWith('decisions'))).toBe(false);
   });
 
   it('hands an engine auto compaction that Jev cannot shrink to the built-in summary', async () => {
@@ -609,7 +640,11 @@ describe('auto-compaction at compactAtPercent', () => {
     const log: string[] = [];
     const $ = {
       session: { usage: async () => ({ context: { percent: 80 } }), compact },
-      command: { run: async (input: { command: string }) => (commands.push(input.command), { text: '' }) },
+      command: {
+        run: async (input: { command: string; args?: string }) => (
+          commands.push([input.command, input.args].filter(Boolean).join(' ')), { text: '' }
+        ),
+      },
       ui: { log: (text: string) => log.push(text) },
     };
     const run = () => hooks['turn.complete']!($, { reason: 'answer' }, async () => ({ text: 'answer' }));
@@ -631,7 +666,7 @@ describe('auto-compaction at compactAtPercent', () => {
       );
     });
     expect(await t.run()).toEqual({ text: 'answer' });
-    expect(t.commands).toEqual(['compact']);
+    expect(t.commands).toEqual([`compact ${AUTO_COMPACT_ARGS}`]);
     expect(t.log).toEqual([]);
   });
 
@@ -650,6 +685,6 @@ describe('auto-compaction at compactAtPercent', () => {
     });
     await t.run();
     await t.run();
-    expect(t.commands).toEqual(['compact']);
+    expect(t.commands).toEqual([`compact ${AUTO_COMPACT_ARGS}`]);
   });
 });

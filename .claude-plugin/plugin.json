@@ -43,7 +43,7 @@
     "minReductionRatio": {
       "type": "number",
       "title": "Minimum reduction ratio",
-      "description": "Minimum estimated character reduction required to replace history.",
+      "description": "Minimum estimated character reduction required to replace history on an automatic compaction. A /compact you type is applied whenever Jev frees anything.",
       "default": 0.25
     },
     "dropCalls": {
